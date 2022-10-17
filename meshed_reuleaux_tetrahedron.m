@@ -1,16 +1,17 @@
-function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display)
+function [V, T] = meshed_reuleaux_tetrahedron(sample_step, option_display)
 %% meshed_reuleaux_tetrahedron : function to compute, display, and save a meshed Reuleaux tetrahedron. 
 %
 % Author & support : nicolas.douillet (at) free.fr, 2017-2020.
+%                    Gerd Wachsmuth
 %
 %
 % Syntax
 %
 % meshed_reuleaux_tetrahedron;
 % meshed_reuleaux_tetrahedron(sample_step);
-% meshed_reuleaux_tetrahedron(sample_step, shape);
-% meshed_reuleaux_tetrahedron(sample_step, shape, option_display);
-% [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display);
+% meshed_reuleaux_tetrahedron(sample_step);
+% meshed_reuleaux_tetrahedron(sample_step, option_display);
+% [V, T] = meshed_reuleaux_tetrahedron(sample_step, option_display);
 %
 %
 % Description
@@ -21,14 +22,11 @@ function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display
 %
 % meshed_reuleaux_tetrahedron(sample_step) uses sample_step steps.
 %
-% meshed_reuleaux_tetrahedron(sample_step, shape) adds a shape
-% option to the tetrahedron, the 'regular' version, or quadratic 2 'inflated' version.
-%
-% meshed_reuleaux_tetrahedron(sample_step, shape, option_display)
+% meshed_reuleaux_tetrahedron(sample_step, option_display)
 % displays the result when option_display is logical *true/1, and doesn't when it is
 % logical false/0.
 %
-% [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display) stores the resulting
+% [V, T] = meshed_reuleaux_tetrahedron(sample_step, option_display) stores the resulting
 % vertices coordinates in the array V, and the corresponding triplet indices list in the array T.
 % 
 %
@@ -41,8 +39,6 @@ function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display
 % Input arguments
 %
 % - sample_step : positive integer scalar, power of 2.
-%
-% - shape : character string in the set {*'regular','inflated'}. Case insensitive.
 %
 % - option_display : logical *true (1) / false (0).
 %
@@ -65,7 +61,7 @@ function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display
 % meshed_reuleaux_tetrahedron;
 %
 % Example #2
-% Computes, displays, and saves an 'Inflated' meshed Reuleaux tetrahedron,
+% Computes, displays, and saves a meshed Reuleaux tetrahedron,
 % which each edge is divided into 8 samples. Radius size is then increased to 9.
 % 
 % [V,T] = meshed_reuleaux_tetrahedron(8,'inflated',true);
@@ -73,26 +69,18 @@ function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display
 
 
 %% Input parsing
-assert(nargin < 4,'Too many input arguments.');
+assert(nargin < 3,'Too many input arguments.');
 
 if nargin > 0    
     assert(isnumeric(sample_step) && sample_step == floor(sample_step) && sample_step > 0,'sample_step parameter must be a positive integer.');    
-    if nargin  > 1        
-        assert(ischar(shape) && (strcmpi(shape,'regular') || strcmpi(shape,'inflated')),'shape parameter must be character string belonging to {''regular'',''inflated''}.');        
-        if nargin > 2            
-            assert(islogical(option_display) || isnumeric(option_display),'option_display parameter type must be either logical or numeric.');            
-        else            
-            option_display = true;            
-        end        
-    else        
-        shape = 'regular';
-        option_display = true;        
-    end    
-else    
+else        
     sample_step = 32;
-    shape = 'regular';
-    option_display = true;    
 end
+if nargin > 1            
+    assert(islogical(option_display) || isnumeric(option_display),'option_display parameter type must be either logical or numeric.');            
+else            
+    option_display = true;            
+end        
 
 
 %% Body
@@ -104,8 +92,8 @@ V4 = [-sqrt(2)/3 -sqrt(6)/3 -1/3];
 
 edge_length = norm(V1-V2); %  = 2*sqrt(6)/3
 
-[V123, T] = sample_triangle(V1', V2', V3', sample_step, false, 200);
-V123 = inflate_triangle_sample_from_sphere_centre(V123, V4, edge_length, shape);
+[V123, T] = sample_triangle(V1', V2', V3', sample_step, 0.85);
+V123 = inflate_triangle_sample_from_sphere_centre(V123, V4, edge_length);
 
 % Tetrahedron faces rotations
 Rmy = @(theta) [cos(theta) 0 -sin(theta);
@@ -143,16 +131,15 @@ end % meshed_reuleaux_tetrahedron
 
 
 %% sample_triangle subfunction
-function [T, I] = sample_triangle(V0, V1, V2, nbstep, option_random, nb_points)
+function [T, I] = sample_triangle(V0, V1, V2, nbstep, warp)
 
 
 % Inputs parsing
 assert(nargin > 2, 'Error : not enough input arguments.');
-assert(nargin < 7, 'Too many input arguments.');
+assert(nargin < 6, 'Too many input arguments.');
 
 % Body
 % Create sampling grid
-global Ndim;
 
 Ndim = size(V0,1);
 
@@ -160,60 +147,44 @@ Ndim = size(V0,1);
 u = (V1 - V0);
 v = (V2 - V0);
 
-T = zeros(sum(1:nbstep+1), Ndim);
+T = zeros((nbstep+1)*(nbstep+2)/2, Ndim);
+    
+k = 1;
 
-if ~option_random
+% Sampling & vertices generation    
+for m = 0:nbstep
     
-    nu = u / norm(u);
-    nv = v / norm(v);
-    stepu = norm(u) / nbstep;
-    stepv = norm(v) / nbstep;
-    k = 1;
-    
-    % Sampling & vertices generation    
-    for m = 0:nbstep
+    for n = 0:nbstep
         
-        for n = 0:nbstep
+        if (m+n <= nbstep) % in (V0,V1,V2) triangle conditions ; indices # nb segments
             
-            if (m+n <= nbstep) % in (V0,V1,V2) triangle conditions ; indices # nb segments
-                
-                % translation vector
-                tv = m*stepu*nu + n*stepv*nv;                
-                T(k,:) = (V0 + tv)';
-                k = k+1;
-                
-            end
+            % Barycentric coordinates.
+            l1 = m/nbstep;
+            l2 = n/nbstep;
+            l3 = (nbstep - n - m)/nbstep;
+
+            % Transform the barycentric coordinates.
+            b1 = l1^warp;
+            b2 = l2^warp;
+            b3 = l3^warp;
+
+            % Assure that they still sum up to 1.
+            db = (b1 + b2 + b3) - 1;
+            b1 = b1 - db*l1;
+            b2 = b2 - db*l2;
+            b3 = b3 - db*l3;
+
+            % translation vector
+            tv = b1*u + b2*v;
+            T(k,:) = (V0 + tv)';
+            k = k+1;
             
         end
         
     end
     
-else
-    
-    T = zeros(nb_points,Ndim);
-    
-    rand_coeff_vect = rand(2,nb_points-3);
-    f = sum(rand_coeff_vect, 1) > 1;
-    rand_coeff_vect(:,f) = 1 - rand_coeff_vect(:,f);
-    
-    % Translation vectors
-    TV = repmat(rand_coeff_vect(1,:),[Ndim 1]).*repmat(u,[1 size(rand_coeff_vect,2)]) + ...
-         repmat(rand_coeff_vect(2,:),[Ndim 1]).*repmat(v,[1 size(rand_coeff_vect,2)]);        
-    
-    for k = 1:size(TV,2)
-        
-        % translation vector
-        tv = TV(:,k);                
-        T(k,:) = (V0 + tv)';
-    end
-    
-    % Add the triangle vertices
-    T(end-2,:) = V0';
-    T(end-1,:) = V1';
-    T(end,:)   = V2';
-    T = unique(T','rows', 'stable')'; % stable order for triangles indexing in the following
 end
-
+    
 % Index triplets list construction %
 I = zeros(nbstep^2,3);
 row_length = 1 + nbstep;
@@ -259,29 +230,26 @@ while (p <= nbstep^2 && row_length > 1)
 end
 
 I = sort(I, 2);
-I = unique(I, 'rows', 'stable');
+I = unique(I, 'rows');
 
 
 end % sample_triangle
 
 
 %% inflate_triangle_sample_from_sphere_centre subfunction
-function [V] = inflate_triangle_sample_from_sphere_centre(U, X, Rho, shape)
+function [V] = inflate_triangle_sample_from_sphere_centre(U, X, Rho)
+% We inflate the points in U such that the distance to X equals Rho
 
+% We are looking for t such that
+%   || t U - X ||^2 = Rho^2
+% This is a quadratic equation.
 
-% Author & support : nicolas.douillet (at) free.fr, 2017-2020
+% Discriminant
+D = sum(U .* X, 2).^2 - sum(U.^2,2).*(sum(X.^2,2) - Rho^2);
 
-D = sqrt(sum((U - repmat(X, [size(U,1) 1])).^2,2)); % distance matrix
+% We take the positive solution
+t = ( sum(U .* X, 2) + sqrt(D) ) ./ sum(U.^2,2);
 
-if strcmpi(shape,'regular')
-    
-    V = Rho* U ./ repmat(D, [1 3]);
-    
-elseif strcmpi(shape,'inflated')
-    
-    V = Rho^2* U ./ repmat(D.^2, [1 3]); % quadratic version
-    
-end
-
+V = t .* U;
 
 end % inflate_triangle_sample_from_sphere_centre
