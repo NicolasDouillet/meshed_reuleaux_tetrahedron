@@ -1,34 +1,30 @@
-function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display)
+function [V, T] = meshed_reuleaux_tetrahedron(sample_step, option_display)
 %% meshed_reuleaux_tetrahedron : function to compute, display, and save a meshed Reuleaux tetrahedron. 
 %
-% Author & support : nicolas.douillet (at) free.fr, 2017-2020.
+% Author & support : nicolas.douillet (at) free.fr, 2017-2022.
 %
 %
 % Syntax
 %
 % meshed_reuleaux_tetrahedron;
 % meshed_reuleaux_tetrahedron(sample_step);
-% meshed_reuleaux_tetrahedron(sample_step, shape);
-% meshed_reuleaux_tetrahedron(sample_step, shape, option_display);
-% [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display);
+% meshed_reuleaux_tetrahedron(sample_step, option_display);
+% [V, T] = meshed_reuleaux_tetrahedron(sample_step, option_display);
 %
 %
 % Description
 %
 % meshed_reuleaux_tetrahedron computes and displays the meshed Reuleaux
 % tetrahedron included in the unit sphere, and which each
-% edge is sampled in 32.
+% edge is sampled in 8.
 %
 % meshed_reuleaux_tetrahedron(sample_step) uses sample_step steps.
 %
-% meshed_reuleaux_tetrahedron(sample_step, shape) adds a shape
-% option to the tetrahedron, the 'regular' version, or quadratic 2 'inflated' version.
-%
-% meshed_reuleaux_tetrahedron(sample_step, shape, option_display)
+% meshed_reuleaux_tetrahedron(sample_step, option_display)
 % displays the result when option_display is logical *true/1, and doesn't when it is
 % logical false/0.
 %
-% [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display) stores the resulting
+% [V, T] = meshed_reuleaux_tetrahedron(sample_step, option_display) stores the resulting
 % vertices coordinates in the array V, and the corresponding triplet indices list in the array T.
 % 
 %
@@ -42,8 +38,6 @@ function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display
 %
 % - sample_step : positive integer scalar, power of 2.
 %
-% - shape : character string in the set {*'regular','inflated'}. Case insensitive.
-%
 % - option_display : logical *true (1) / false (0).
 %
 %
@@ -56,41 +50,20 @@ function [V, T] = meshed_reuleaux_tetrahedron(sample_step, shape, option_display
 %     [ |  |  |]
 % - T [T1 T2 T3] : positive integer matrix double, the triangulation. Size = [nb_triangles,3].
 %     [ |  |  |]
-%
-%
-% Example #1
-% Computes and displays the standard meshed Reuleaux tetrahedron,
-% included in the unit sphere, and which each edge is divided into 32 samples.
-%
-% meshed_reuleaux_tetrahedron;
-%
-% Example #2
-% Computes, displays, and saves an 'Inflated' meshed Reuleaux tetrahedron,
-% which each edge is divided into 8 samples. Radius size is then increased to 9.
-% 
-% [V,T] = meshed_reuleaux_tetrahedron(8,'inflated',true);
-% V = 9*V;
 
 
 %% Input parsing
-assert(nargin < 4,'Too many input arguments.');
+assert(nargin < 3,'Too many input arguments.');
 
-if nargin > 0    
+if nargin > 0
     assert(isnumeric(sample_step) && sample_step == floor(sample_step) && sample_step > 0,'sample_step parameter must be a positive integer.');    
-    if nargin  > 1        
-        assert(ischar(shape) && (strcmpi(shape,'regular') || strcmpi(shape,'inflated')),'shape parameter must be character string belonging to {''regular'',''inflated''}.');        
-        if nargin > 2            
-            assert(islogical(option_display) || isnumeric(option_display),'option_display parameter type must be either logical or numeric.');            
-        else            
-            option_display = true;            
-        end        
-    else        
-        shape = 'regular';
+    if nargin  > 1                                
+            assert(islogical(option_display) || isnumeric(option_display),'option_display parameter type must be either logical or numeric.');                    
+    else                
         option_display = true;        
     end    
-else    
-    sample_step = 32;
-    shape = 'regular';
+else
+    sample_step = 8;    
     option_display = true;    
 end
 
@@ -104,8 +77,31 @@ V4 = [-sqrt(2)/3 -sqrt(6)/3 -1/3];
 
 edge_length = norm(V1-V2); %  = 2*sqrt(6)/3
 
-[V123, T] = sample_triangle(V1', V2', V3', sample_step, false, 200);
-V123 = inflate_triangle_sample_from_sphere_centre(V123, V4, edge_length, shape);
+[V123, T] = sample_triangle(V2', V1', V3', sample_step, false, 200);
+V_flat = V123; 
+
+D123 = sqrt(sum((V123 - V4).^2,2)); % distance matrix
+V123 = edge_length*(V123 - V4) ./ repmat(D123, [1 3]) + repmat(V4, [size(V123,1), 1]); % "inflated triangle" / opposite vertex V4
+
+be = 1:sample_step+1;                       % bottom edge index vector
+re = cumsum(sample_step+1:-1:0);            % right edge index vector
+le = cat(2,1,1+cumsum(sample_step+1:-1:2)); % left edge index vector
+
+M34 = [-sqrt(2)/3 0 -1/3]; % middle of [V3;V4] segment
+D34 = sqrt(sum((V_flat(le,:) - M34).^2,2));
+V_flat(le,:) = sqrt(2)*(V_flat(le,:) - M34) ./ repmat(D34, [1 3]) + repmat(M34, [size(V_flat(le,:),1), 1]);
+V123(le,:) = V_flat(le,:);
+
+M24 = [1/3/sqrt(2) -1/sqrt(6) -1/3]; % middle of [V2;V4] segment
+D24 = sqrt(sum((V_flat(re,:) - M24).^2,2));
+V_flat(re,:) = sqrt(2)*(V_flat(re,:) - M24) ./ repmat(D24, [1 3]) + repmat(M24, [size(V_flat(re,:),1), 1]);
+V123(re,:) = V_flat(re,:);
+
+M14 = [-1/3/sqrt(2) -1/sqrt(6) 1/3]; % middle of [V1;V4] segment
+D14 = sqrt(sum((V_flat(be,:) - M14).^2,2));
+V_flat(be,:) = sqrt(2)*(V_flat(be,:) - M14) ./ repmat(D14, [1 3]) + repmat(M14, [size(V_flat(be,:),1), 1]);
+V123(be,:) = V_flat(be,:);
+
 
 % Tetrahedron faces rotations
 Rmy = @(theta) [cos(theta) 0 -sin(theta);
@@ -128,14 +124,22 @@ T = [T;
      T+2*repmat(size(V123,1), [size(T,1) size(T,2)]);...
      T+3*repmat(size(V123,1), [size(T,1) size(T,2)])];
     
+
+% Duplicated vertices removal (from the edges)
+[V,T] = remove_duplicated_vertices(V,T);
+
+
 TRI = triangulation(T, V(:,1), V(:,2), V(:,3));
 
-%  Display
+%%  Display
 if option_display
+    
     figure;    
-    trimesh(TRI), hold on;
-    colormap([0 0 1]);
+    trimesh(TRI), hold on;    
+    colormap([0 0 1]);    
     axis square, axis equal, axis tight;
+%     camlight left, camlight right;
+    
 end
 
 
@@ -146,7 +150,7 @@ end % meshed_reuleaux_tetrahedron
 function [T, I] = sample_triangle(V0, V1, V2, nbstep, option_random, nb_points)
 
 
-% Inputs parsing
+% Input parsing
 assert(nargin > 2, 'Error : not enough input arguments.');
 assert(nargin < 7, 'Too many input arguments.');
 
@@ -265,23 +269,11 @@ I = unique(I, 'rows', 'stable');
 end % sample_triangle
 
 
-%% inflate_triangle_sample_from_sphere_centre subfunction
-function [V] = inflate_triangle_sample_from_sphere_centre(U, X, Rho, shape)
+%% remove_duplicated_vertices subfunction
+function [V_out, T_out] = remove_duplicated_vertices(V_in, T_in)
 
+tol = 1e4*eps;
+[V_out,~,n] = uniquetol(V_in,tol,'ByRows',true);
+T_out = n(T_in);
 
-% Author & support : nicolas.douillet (at) free.fr, 2017-2020
-
-D = sqrt(sum((U - repmat(X, [size(U,1) 1])).^2,2)); % distance matrix
-
-if strcmpi(shape,'regular')
-    
-    V = Rho* U ./ repmat(D, [1 3]);
-    
-elseif strcmpi(shape,'inflated')
-    
-    V = Rho^2* U ./ repmat(D.^2, [1 3]); % quadratic version
-    
-end
-
-
-end % inflate_triangle_sample_from_sphere_centre
+end % remove_duplicated_vertices
