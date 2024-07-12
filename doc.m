@@ -2,7 +2,7 @@
 %
 % Function to compute, display, and save a meshed Reuleaux tetrahedron. 
 %
-% Author & support : nicolas.douillet (at) free.fr, 2017-2022.
+% Author : nicolas.douillet (at) free.fr, 2017-2024.
 %
 %% Syntax
 %
